@@ -1,4 +1,4 @@
-# Quant Trade Engine - Hierarchical Quantitative Trading Framework
+# Quant Trade Engine - Hierarchical Trading Framework
 
 A comprehensive, production-ready trading system with multi-level compliance, hierarchical ledger recording, and data-source agnostic architecture.
 
@@ -75,10 +75,12 @@ TradeAccount
 - **Real-time P&L**: Realized and unrealized profit/loss tracking
 - **Average Cost Basis**: Industry-standard accounting method
 
-### 🔌 Data Source Agnostic
-- Works with any data provider implementing `get_quote(symbol)` → `{'price': float}`
-- Compatible with: Yahoo Finance, Alpha Vantage, Interactive Brokers, Alpaca, Polygon.io, etc.
-- Can operate without data provider (manual price input)
+### 🔌 Data Source Agnostic (Pass-Through Only)
+- **Framework never fetches data** - you control all price sourcing
+- `data_provider` parameter is a **convenience pass-through** (set once, available everywhere)
+- You decide when/how to use it in your custom strategies
+- Compatible with any data source: Yahoo Finance, Alpha Vantage, Interactive Brokers, Alpaca, etc.
+- Can operate without data provider (prices provided explicitly)
 
 ---
 
@@ -196,7 +198,9 @@ from core import Strategy, Trade
 # 1. Create standalone strategy (no hierarchy needed!)
 class MyStrategy(Strategy):
     def run(self):
-        self.place_trade("AAPL", Trade.BUY, 100, Trade.MARKET, price=150)
+        # You provide prices explicitly - framework doesn't fetch
+        price = 150.00  # From your data source
+        self.place_trade("AAPL", Trade.BUY, 100, Trade.MARKET, price=price)
 
 strategy = MyStrategy("STRAT001", "My Strat", 100_000, 
                      portfolio=None, data_provider=None)
@@ -271,13 +275,13 @@ strategy = Strategy("S001", "Test", 100_000, portfolio=portfolio)
 ```python
 from core import TradeAccount
 
-# With data provider (for live prices)
-# Initialize your chosen data provider that implements get_quote(symbol) -> {'price': float}
-# Examples: Yahoo Finance (yfinance), Alpha Vantage, Interactive Brokers API, Alpaca, etc.
-data_provider = YourDataProvider()  # Replace with your actual provider
+# With data provider (OPTIONAL - acts as pass-through for convenience)
+# Set once here, accessible in all strategies via self.data_provider
+# Framework NEVER calls it - YOU decide when to fetch prices
+data_provider = YourBrokerAPI()  # Your choice: Yahoo Finance, IB, Alpaca, etc.
 account = TradeAccount("ACC001", "My Account", data_provider=data_provider)
 
-# Without data provider (manual prices)
+# Without data provider (prices provided explicitly in place_trade)
 account = TradeAccount("ACC001", "My Account", data_provider=None)
 ```
 
@@ -328,13 +332,19 @@ class MomentumStrategy(Strategy):
     
     def run(self):
         """Your trading logic here"""
-        # Example: Buy AAPL
+        # YOU fetch prices (framework never does this automatically)
+        # Option 1: Use self.data_provider if you set it
+        # price = self.data_provider.get_price("AAPL") if self.data_provider else 150.00
+        
+        # Option 2: Provide explicitly
+        price = 150.00  # From your data source
+        
         trade = self.place_trade(
             symbol="AAPL",
             direction=Trade.BUY,
             quantity=100,
             trade_type=Trade.MARKET,
-            price=150.00  # Required if no data_provider
+            price=price  # Always required
         )
         print(f"Executed: {trade}")
 
@@ -354,21 +364,28 @@ strategy.run()
 
 #### Place Different Trade Types
 ```python
+# Note: Price is ALWAYS required - framework never auto-fetches
+# Fetch prices however you want (API, CSV, database, etc.)
+
 # Market Order
-trade1 = strategy.place_trade("AAPL", Trade.BUY, 100, Trade.MARKET, price=150.00)
+price = 150.00  # User fetches/provides
+trade1 = strategy.place_trade("AAPL", Trade.BUY, 100, Trade.MARKET, price=price)
 
 # Limit Order
-trade2 = strategy.place_trade("GOOGL", Trade.BUY, 50, Trade.LIMIT, price=140.00)
+price = 140.00
+trade2 = strategy.place_trade("GOOGL", Trade.BUY, 50, Trade.LIMIT, price=price)
 
 # Stop Loss
 trade3 = strategy.place_trade("MSFT", Trade.SELL, 75, Trade.STOP_LOSS, 
                               price=340.00, stop_price=335.00)
 
 # Short Selling (if allowed by fund rules)
-trade4 = strategy.place_trade("TSLA", Trade.SELL_SHORT, 200, Trade.MARKET, price=250.00)
+price = 250.00
+trade4 = strategy.place_trade("TSLA", Trade.SELL_SHORT, 200, Trade.MARKET, price=price)
 
 # Cover Short
-trade5 = strategy.place_trade("TSLA", Trade.BUY_TO_COVER, 200, Trade.MARKET, price=240.00)
+price = 240.00
+trade5 = strategy.place_trade("TSLA", Trade.BUY_TO_COVER, 200, Trade.MARKET, price=price)
 ```
 
 #### Error Handling
@@ -392,8 +409,11 @@ position = strategy.get_position("AAPL")
 print(f"Position: {position}")
 print(f"Quantity: {position.quantity}")
 print(f"Entry Price: ${position.avg_entry_price:.2f}")
-print(f"Market Value: ${position.market_value:,.2f}")
-print(f"Unrealized P&L: ${position.unrealized_pnl:,.2f}")
+
+# Calculate market value and P&L at current price (you provide price)
+current_price = 155.00  # Fetch from your data source
+print(f"Market Value: ${position.get_market_value(current_price):,.2f}")
+print(f"Unrealized P&L: ${position.get_unrealized_pnl(current_price):,.2f}")
 
 # Get all open positions
 open_positions = strategy.get_open_positions()
@@ -700,8 +720,12 @@ class TradeAccount(account_id, account_name, data_provider=None)
 ### Fund
 
 ```python
-class Fund(fund_id, fund_name, fund_balance, trade_account)
+class Fund(fund_id, fund_name, fund_balance, trade_account=None, data_provider=None)
 ```
+
+**Parameters:**
+- `trade_account` - Optional parent account (None = standalone mode)
+- `data_provider` - Optional pass-through (used if trade_account=None)
 
 **Methods:**
 - `create_portfolio(portfolio_id, portfolio_name, portfolio_balance)` → Portfolio
@@ -723,8 +747,12 @@ class Fund(fund_id, fund_name, fund_balance, trade_account)
 ### Portfolio
 
 ```python
-class Portfolio(portfolio_id, portfolio_name, portfolio_balance, fund)
+class Portfolio(portfolio_id, portfolio_name, portfolio_balance, fund=None, data_provider=None)
 ```
+
+**Parameters:**
+- `fund` - Optional parent fund (None = standalone mode)
+- `data_provider` - Optional pass-through (used if fund=None)
 
 **Methods:**
 - `get_strategy(strategy_id)` → Strategy | None
@@ -745,24 +773,29 @@ class Portfolio(portfolio_id, portfolio_name, portfolio_balance, fund)
 ### Strategy
 
 ```python
-class Strategy(strategy_id, strategy_name, strategy_balance, portfolio)
+class Strategy(strategy_id, strategy_name, strategy_balance, portfolio=None, data_provider=None)
 ```
 
+**Parameters:**
+- `portfolio` - Optional parent portfolio (None = standalone mode)
+- `data_provider` - Optional pass-through (used if portfolio=None)
+
 **Methods:**
-- `place_trade(symbol, direction, quantity, trade_type, price=None, stop_price=None)` → Trade
+- `place_trade(symbol, direction, quantity, trade_type, price, stop_price=None)` → Trade
+- `get_cash_balance(current_prices=None)` → float
 - `get_position(symbol)` → Position | None
 - `get_open_positions()` → dict
 - `get_max_position_pct()` → float
 - `get_max_position_value()` → float
 - `can_short()` → bool
 - `get_allowed_trade_types()` → set
-- `summary(show_positions=False)` → None
+- `summary(show_positions=False, current_prices=None)` → None
 
 **Properties:**
-- `cash_balance` - Available cash
 - `positions` - Dictionary of positions
 - `trades` - List of all trades
 - `ledger` - Strategy-level ledger
+- `data_provider` - Pass-through from parent or direct parameter
 
 **Must Implement:**
 - `run()` - Your custom trading logic
@@ -797,15 +830,14 @@ class Position(symbol, strategy)
 ```
 
 **Methods:**
-- `get_current_price()` → float
+- `get_market_value(current_price)` → float
+- `get_unrealized_pnl(current_price)` → float
 - `update_from_trade(trade)` → None
 
 **Properties:**
 - `quantity` - Current quantity (+ve = long, -ve = short)
 - `avg_entry_price` - Average entry price
-- `market_value` - Current market value
 - `realized_pnl` - Realized profit/loss
-- `unrealized_pnl` - Unrealized profit/loss
 - `is_long`, `is_short`, `is_closed` - Position type checks
 - `opening_trades`, `closing_trades` - Trade history
 
@@ -1023,20 +1055,21 @@ The framework **trusts programmers** to implement correct logic at the strategy 
 
 ### Data Source Agnostic Design
 
-The system doesn't depend on any specific data provider. Simply pass any object with:
-```python
-def get_quote(symbol: str) -> dict:
-    return {'price': float}
-```
+The system doesn't depend on any specific data provider. The `data_provider` parameter is **purely a pass-through mechanism**:
 
-This works with:
+- Set it at `TradeAccount` level → flows down to all children
+- Framework NEVER calls it - you use it in YOUR custom strategies
+- No required interface - use ANY data source you want
+- You control when/how/if to fetch prices
+
+**Compatible with:**
 - **Yahoo Finance** (yfinance library)
 - **Alpha Vantage** (alpha_vantage library)
 - **Interactive Brokers API** (ib_insync or ibapi)
 - **Alpaca** (alpaca-trade-api)
 - **Polygon.io** (polygon library)
 - **TD Ameritrade API**
-- **Any custom data source** that implements the interface
+- **CSV files, databases, or any custom source**
 
 ### Trade Execution
 
