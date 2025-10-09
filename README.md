@@ -1,4 +1,4 @@
-# Trade Engine - Hierarchical Trading Framework
+# Quant Trade Engine - Hierarchical Quantitative Trading Framework
 
 A comprehensive, production-ready trading system with multi-level compliance, hierarchical ledger recording, and data-source agnostic architecture.
 
