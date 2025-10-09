@@ -168,4 +168,3 @@ class TradeAccount:
         else:
             print("  No funds registered yet.")
             print("=" * 80)
-
