@@ -14,18 +14,16 @@
 
 from core import TradeAccount, Strategy, Trade
 
-# Note: You can optionally provide a data provider for live prices at the TradeAccount level
-# The data provider should implement: get_quote(symbol) -> {'price': float}
-# Examples of compatible providers:
-#   - Yahoo Finance (yfinance)
-#   - Alpha Vantage (alpha_vantage)
-#   - Interactive Brokers API (ib_insync)
-#   - Alpaca (alpaca-trade-api)
-#   - Polygon.io
-# 
-# Example initialization:
-# data_provider = YourDataProvider(api_key="your_key")
-# account = TradeAccount("ACC001", "Account Name", data_provider=data_provider)
+# Note: data_provider is OPTIONAL and acts as a pass-through for user convenience
+# If you set it at TradeAccount level, it flows down to Fund → Portfolio → Strategy
+# The framework NEVER calls it - YOU decide when/how to fetch prices
+#
+# Example: If you have a broker API or data source:
+#   data_provider = YourBrokerAPI(api_key="your_key")
+#   account = TradeAccount("ACC001", "Account", data_provider=data_provider)
+#   # Now all strategies can access it via self.data_provider
+#
+# In this example, we don't use a data provider - prices are provided explicitly
 
 ###############################################################################
 # PART 1: ACCOUNT SETUP
@@ -142,7 +140,12 @@ class TechMomentumStrategy(Strategy):
         """Execute tech stock trades"""
         print(f"\n🔷 Running {self.strategy_name}...")
         
-        # Buy FAANG stocks (within 5% single trade limit)
+        # USER provides prices explicitly - framework doesn't fetch
+        # In real usage, you'd fetch from self.data_provider or your data source
+        
+        # Example: prices = self.data_provider.get_prices(["AAPL", "GOOGL", "MSFT"])
+        # For this demo, we use fixed prices
+        
         self.place_trade("AAPL", Trade.BUY, 100, Trade.MARKET, price=150.00)
         print("   ✓ Bought 100 AAPL @ $150")
         
@@ -165,7 +168,10 @@ class BankValueStrategy(Strategy):
         """Execute finance stock trades"""
         print(f"\n🔷 Running {self.strategy_name}...")
         
-        # Buy bank stocks (within 4% single trade limit)
+        # USER provides prices - in real usage, fetch from your data source
+        # Example: if self.data_provider:
+        #     price = self.data_provider.get_price("JPM")
+        
         self.place_trade("JPM", Trade.BUY, 80, Trade.MARKET, price=145.00)
         print("   ✓ Bought 80 JPM @ $145")
         
@@ -365,14 +371,14 @@ print(f"\n🎯 Tech Strategy Capabilities:")
 print(f"   Max Position %: {tech_strategy.get_max_position_pct()}%")
 print(f"   Max Position $: ${tech_strategy.get_max_position_value():,.2f}")
 print(f"   Can Short: {tech_strategy.can_short()}")
-print(f"   Cash Available: ${tech_strategy.cash_balance:,.2f}")
+print(f"   Cash Available: ${tech_strategy.get_cash_balance():,.2f}")
 print(f"   Allowed Trade Types: {tech_strategy.get_allowed_trade_types()}")
 
 print(f"\n🎯 Bank Strategy Capabilities:")
 print(f"   Max Position %: {bank_strategy.get_max_position_pct()}%")
 print(f"   Max Position $: ${bank_strategy.get_max_position_value():,.2f}")
 print(f"   Can Short: {bank_strategy.can_short()}")
-print(f"   Cash Available: ${bank_strategy.cash_balance:,.2f}")
+print(f"   Cash Available: ${bank_strategy.get_cash_balance():,.2f}")
 print(f"   Allowed Trade Types: {bank_strategy.get_allowed_trade_types()}")
 
 ###############################################################################

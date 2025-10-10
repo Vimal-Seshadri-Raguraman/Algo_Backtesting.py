@@ -13,3 +13,4 @@ class TradeComplianceError(Exception):
 class InsufficientFundsError(Exception):
     """Raised when strategy doesn't have enough cash for trade"""
     pass
+

@@ -58,38 +58,41 @@ class Position:
         """Check if position is closed"""
         return self.quantity == 0
     
-    def get_current_price(self):
+    def get_market_value(self, current_price):
         """
-        Fetch current market price from data provider
+        Calculate market value at given price
+        
+        Args:
+            current_price: Price to use for valuation
         
         Returns:
-            float: Current market price (or entry price if no provider)
-        """
-        if self.strategy.data_provider is None:
-            # Fallback to entry price when no data provider available
-            return self.avg_entry_price if self.avg_entry_price > 0 else 0.0
-        quote = self.strategy.data_provider.get_quote(self.symbol)
-        return quote['price']
-    
-    @property
-    def market_value(self):
-        """
-        Current market value of position using live price
+            float: Market value of position
+        
+        Example:
+            current_price = 150.50
+            value = position.get_market_value(current_price)
         """
         if self.quantity == 0:
-            return 0
-        current_price = self.get_current_price()
+            return 0.0
         return abs(self.quantity) * current_price
     
-    @property
-    def unrealized_pnl(self):
+    def get_unrealized_pnl(self, current_price):
         """
-        Calculate unrealized P&L using current market price
+        Calculate unrealized P&L at given price
+        
+        Args:
+            current_price: Current market price for the symbol
+        
+        Returns:
+            float: Unrealized profit/loss
+        
+        Example:
+            current_price = 155.00
+            pnl = position.get_unrealized_pnl(current_price)
         """
         if self.quantity == 0:
-            return self.realized_pnl
+            return 0.0  # Closed position has no unrealized P&L
         
-        current_price = self.get_current_price()
         return (current_price - self.avg_entry_price) * self.quantity
     
     def update_from_trade(self, trade):

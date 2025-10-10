@@ -59,10 +59,31 @@ class Strategy:
         # Initialize ledger for strategy-level trade tracking
         self.ledger = Ledger(strategy_name, "Strategy")
     
-    @property
-    def cash_balance(self):
-        """Available cash = allocated balance - value of open positions"""
-        positions_value = sum(pos.market_value for pos in self.positions.values() if not pos.is_closed)
+    def get_cash_balance(self, current_prices=None):
+        """
+        Calculate available cash
+        
+        Args:
+            current_prices: Dict of {symbol: price} for open positions.
+                          If None, uses entry prices (conservative estimate).
+        
+        Returns:
+            float: Available cash balance
+        
+        Example:
+            prices = {"AAPL": 150.0, "GOOGL": 2800.0}
+            cash = strategy.get_cash_balance(prices)
+        """
+        if current_prices is None:
+            current_prices = {}
+        
+        positions_value = 0
+        for symbol, pos in self.positions.items():
+            if not pos.is_closed:
+                # Use provided price, or fall back to entry price
+                price = current_prices.get(symbol, pos.avg_entry_price)
+                positions_value += pos.get_market_value(price)
+        
         return self.strategy_balance - positions_value
     
     def place_trade(self, symbol, direction, quantity, trade_type, price=None, stop_price=None):
@@ -87,16 +108,9 @@ class Strategy:
             TradeComplianceError: If trade violates parent rules
             InsufficientFundsError: If not enough cash
         """
-        # For MARKET orders, fetch current price from data provider
-        if trade_type == Trade.MARKET and price is None:
-            if self.data_provider is None:
-                raise ValueError("Data provider required for MARKET orders without price")
-            quote = self.data_provider.get_quote(symbol)
-            price = quote['price']
-        
-        # Price is now required for validation
+        # Price is always required - user must provide it
         if price is None:
-            raise ValueError(f"Price required for {trade_type} order type")
+            raise ValueError(f"Price is required for all trade types. User must provide current market price.")
         
         # Create trade object
         trade = Trade(symbol, direction, quantity, trade_type, self, price, stop_price)
@@ -120,9 +134,11 @@ class Strategy:
         # Check sufficient funds
         if direction in {Trade.BUY, Trade.BUY_TO_COVER}:
             estimated_cost = quantity * price
-            if estimated_cost > self.cash_balance:
+            # Use conservative cash estimate (entry prices for existing positions)
+            available_cash = self.get_cash_balance()
+            if estimated_cost > available_cash:
                 raise InsufficientFundsError(
-                    f"Insufficient funds: Need ${estimated_cost:,.2f}, have ${self.cash_balance:,.2f}"
+                    f"Insufficient funds: Need ${estimated_cost:,.2f}, have ${available_cash:,.2f}"
                 )
         
         # Execute through TradeAccount (this would actually submit to broker)
@@ -210,16 +226,26 @@ class Strategy:
         # All types allowed in standalone mode
         return {Trade.MARKET, Trade.LIMIT, Trade.STOP_LOSS, Trade.STOP_LIMIT, Trade.TRAILING_STOP}
     
-    def summary(self, show_positions=False):
-        """Display summary of the strategy"""
+    def summary(self, show_positions=False, current_prices=None):
+        """
+        Display summary of the strategy
+        
+        Args:
+            show_positions: Show open positions detail
+            current_prices: Dict of {symbol: price} for accurate cash calculation.
+                          If None, uses entry prices.
+        """
         print("=" * 80)
         print(f"🎯 STRATEGY SUMMARY: {self.strategy_name} (ID: {self.strategy_id})")
         print("=" * 80)
         print(f"Allocated Capital: ${self.strategy_balance:>15,.2f}")
-        print(f"Cash Available:    ${self.cash_balance:>15,.2f}")
+        print(f"Cash Available:    ${self.get_cash_balance(current_prices):>15,.2f}")
         print(f"Open Positions:    {len(self.get_open_positions()):>15}")
         print(f"Total Trades:      {len(self.trades):>15}")
-        print(f"Parent Portfolio:  {self.portfolio.portfolio_name}")
+        if self.portfolio is not None:
+            print(f"Parent Portfolio:  {self.portfolio.portfolio_name}")
+        else:
+            print(f"Parent Portfolio:  None (Standalone)")
         print("=" * 80)
         
         if show_positions and self.get_open_positions():
