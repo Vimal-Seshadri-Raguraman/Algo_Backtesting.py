@@ -128,9 +128,6 @@ Return Trade Object
 ### Setup
 
 ```bash
-# Clone or download the Trade_Engine directory
-cd /path/to/Trade_Engine
-
 # The core package is ready to use
 python3 example_comprehensive.py
 ```
