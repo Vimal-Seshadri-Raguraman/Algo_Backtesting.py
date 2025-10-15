@@ -6,43 +6,71 @@
 
 from .rules import TradeRules
 from .ledger import Ledger
+from .oms_tms_mixin import OMSTMSMixin
 
 
-class Portfolio:
+class Portfolio(OMSTMSMixin):
     ###############################################################################
-    # Portfolio - Allocation of fund capital to specific investment portfolios
+    # Portfolio - Allocation of fund capital (BASE CLASS - Extend or use directly)
     # ENFORCED RULES: Portfolio-level risk rules are checked before trade execution
     ###############################################################################
     
-    def __init__(self, portfolio_id, portfolio_name, portfolio_balance, fund=None, data_provider=None):
+    def __init__(self, portfolio_id, portfolio_name, portfolio_balance, fund=None):
         """
-        Initialize Portfolio - works standalone or linked to fund
+        Initialize Portfolio - Base class for portfolio management
+        
+        Can be used directly OR extended for custom behavior (both valid!).
         
         Args:
             portfolio_id: Unique identifier for the portfolio
             portfolio_name: Name of the portfolio
             portfolio_balance: Capital for this portfolio
             fund: Optional parent Fund (None = standalone mode)
-            data_provider: Optional data provider (used if fund=None)
         
-        Examples:
-            # Standalone mode
-            portfolio = Portfolio("P001", "Tech Portfolio", 500_000,
-                                fund=None, data_provider=my_provider)
+        Basic Usage (Direct - Quick Start):
+            portfolio = Portfolio("PORT001", "Tech Portfolio", 500_000)
+            strategy = MyStrategy("STRAT001", "Strategy", 100_000, portfolio)
+        
+        Advanced Usage (Extend - Production/Custom):
+            class RiskManagedPortfolio(Portfolio):
+                def __init__(self, portfolio_id, portfolio_name, portfolio_balance, 
+                           fund=None, var_limit=0.05, price_feed=None):
+                    super().__init__(portfolio_id, portfolio_name, portfolio_balance, fund)
+                    self.var_limit = var_limit
+                    self.price_feed = price_feed  # Add your own data source
+                
+                def calculate_var(self):
+                    # Your custom VaR calculation using self.price_feed
+                    pass
+                
+                def enforce_var_limit(self):
+                    # Your custom risk enforcement
+                    var = self.calculate_var()
+                    if var > self.var_limit:
+                        # Take action
+                        pass
             
-            # Linked mode (with parent fund)
-            portfolio = Portfolio("P001", "Tech Portfolio", 500_000, fund=my_fund)
+            portfolio = RiskManagedPortfolio("PORT001", "Risk Managed", 5_000_000,
+                                            price_feed=my_dataframe)
+            portfolio.enforce_var_limit()
+        
+        Extension Points:
+            - Add your own data source attributes (DataFrame, API client, CSV reader)
+            - Add risk monitoring (VaR, concentration, correlation)
+            - Add auto-rebalancing across strategies
+            - Add sector/asset class allocation tracking
+            - Add drawdown monitoring and alerts
+            - Add performance attribution by strategy
+            - Override validate_trade() for custom pre-trade checks
         """
         self.portfolio_id = portfolio_id
         self.portfolio_name = portfolio_name
+        self.name = portfolio_name  # For OMSTMSMixin
         self.portfolio_balance = portfolio_balance
         self.fund = fund
         
-        # Get data provider from fund OR use direct parameter
-        if fund is not None:
-            self.data_provider = fund.data_provider
-        else:
-            self.data_provider = data_provider
+        # Initialize or inherit OMS/TMS
+        self._initialize_or_inherit_systems(parent=fund)
         
         self.strategies = {}  # Dictionary: "strategy_id:strategy_name" -> Strategy
         
@@ -140,6 +168,62 @@ class Portfolio:
             tuple: (bool, str) - (is_allowed, reason_if_not)
         """
         return self.trade_rules.is_trade_allowed(trade, self.portfolio_balance, current_position)
+    
+    def performance_metrics(self, current_prices=None, show_summary=True):
+        """
+        Calculate and display performance metrics for this portfolio
+        (aggregates all strategy performance)
+        
+        Args:
+            current_prices: Dict of {symbol: price} for accurate balance calculation.
+            show_summary: If True, displays formatted summary. If False, returns metrics object.
+        
+        Returns:
+            PerformanceMetrics object if show_summary=False
+        
+        Example:
+            # Display summary
+            portfolio.performance_metrics()
+            
+            # Get metrics object for analysis
+            metrics = portfolio.performance_metrics(show_summary=False)
+            print(f"Sharpe Ratio: {metrics.sharpe_ratio()}")
+        """
+        from tools import PerformanceMetrics
+        
+        # Calculate current balance: unallocated cash + all strategy values
+        current_balance = self.cash_balance  # Start with unallocated cash
+        
+        # Add all strategy values
+        for strategy in self.strategies.values():
+            # Get strategy cash (at entry prices)
+            strategy_cash = strategy.get_cash_balance(current_prices=None)
+            current_balance += strategy_cash
+            
+            # Add current value of strategy's open positions
+            for symbol, position in strategy.get_open_positions().items():
+                if not position.is_closed:
+                    price = current_prices.get(symbol, position.avg_entry_price) if current_prices else position.avg_entry_price
+                    current_balance += position.get_market_value(price)
+            
+            # Add realized P&L from closed positions
+            realized_pnl = sum(pos.realized_pnl for pos in strategy.positions.values())
+            current_balance += realized_pnl
+        
+        # Create performance metrics object
+        metrics = PerformanceMetrics(
+            owner_name=self.portfolio_name,
+            owner_type="Portfolio",
+            ledger=self.ledger,
+            initial_balance=self.portfolio_balance,
+            current_balance=current_balance,
+            current_prices=current_prices
+        )
+        
+        if show_summary:
+            metrics.summary()
+        else:
+            return metrics
     
     def summary(self, show_children=False):
         """

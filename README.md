@@ -11,14 +11,24 @@ A comprehensive, production-ready trading system with multi-level compliance, hi
 - [Architecture](#architecture)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
-- [Detailed Usage Guide](#detailed-usage-guide)
-- [Ledger System](#ledger-system)
-- [Trading Rules & Compliance](#trading-rules--compliance)
-- [API Reference](#api-reference)
-- [Module Structure](#module-structure)
+- [Module Documentation](#module-documentation)
 - [Examples](#examples)
 - [Design Philosophy](#design-philosophy)
 - [Future Enhancements](#future-enhancements)
+
+---
+
+## 📚 Module Documentation
+
+**Detailed documentation for each package:**
+
+- **[Core Framework](core/README.md)** - Base classes (TradeAccount, Fund, Portfolio, Strategy, etc.)
+- **[Tools](tools/README.md)** - Analysis & utilities (PerformanceMetrics, optimization, backtesting)
+- **[Examples](examples/README.md)** - Complete examples catalog with learning path
+
+---
+
+[See detailed sections below for quick reference, or visit the module READMEs for comprehensive guides]
 
 ---
 
@@ -128,6 +138,9 @@ Return Trade Object
 ### Setup
 
 ```bash
+# Clone or download the Trade_Engine directory
+cd /path/to/Trade_Engine
+
 # The core package is ready to use
 python3 example_comprehensive.py
 ```
@@ -194,16 +207,16 @@ from core import Strategy, Trade
 
 # 1. Create standalone strategy (no hierarchy needed!)
 class MyStrategy(Strategy):
-    def run(self):
-        # You provide prices explicitly - framework doesn't fetch
-        price = 150.00  # From your data source
+    def run(self, prices):
+        # You provide prices - framework doesn't fetch
+        price = prices['AAPL']  # From your data source
         self.place_trade("AAPL", Trade.BUY, 100, Trade.MARKET, price=price)
 
-strategy = MyStrategy("STRAT001", "My Strat", 100_000, 
-                     portfolio=None, data_provider=None)
+strategy = MyStrategy("STRAT001", "My Strat", 100_000)
 
-# 2. Run (no validation, max flexibility)
-strategy.run()
+# 2. Run with your price data (no validation, max flexibility)
+prices = {'AAPL': 150.00}  # Dict, DataFrame, API - your choice
+strategy.run(prices)
 
 # 3. View results
 strategy.ledger.summary()
@@ -244,22 +257,27 @@ Every component in the Trade Engine can work **standalone** OR be **linked** to 
 
 ```python
 # Pattern 1: Standalone Strategy (fastest)
-strategy = Strategy("S001", "Test", 100_000, portfolio=None, data_provider=None)
+class MyStrategy(Strategy):
+    def run(self, prices):
+        self.place_trade("AAPL", Trade.BUY, 100, Trade.MARKET, price=prices['AAPL'])
+
+strategy = MyStrategy("S001", "Test", 100_000)
+strategy.run({'AAPL': 150.00})
 
 # Pattern 2: Portfolio + Strategy (partial chain)
-portfolio = Portfolio("P001", "Tech", 500_000, fund=None, data_provider=None)
-strategy = Strategy("S001", "Test", 100_000, portfolio=portfolio)
+portfolio = Portfolio("P001", "Tech", 500_000)
+strategy = MyStrategy("S001", "Test", 100_000, portfolio=portfolio)
 
 # Pattern 3: Fund + Portfolio + Strategy (partial chain)
-fund = Fund("F001", "Growth", 1_000_000, trade_account=None, data_provider=None)
+fund = Fund("F001", "Growth", 1_000_000)
 portfolio = fund.create_portfolio("P001", "Tech", 500_000)
-strategy = Strategy("S001", "Test", 100_000, portfolio=portfolio)
+strategy = MyStrategy("S001", "Test", 100_000, portfolio=portfolio)
 
 # Pattern 4: Full Hierarchy (maximum safety)
-account = TradeAccount("ACC001", "Account", data_provider=None)
+account = TradeAccount("ACC001", "Account")
 fund = account.create_fund("F001", "Growth", 1_000_000)
 portfolio = fund.create_portfolio("P001", "Tech", 500_000)
-strategy = Strategy("S001", "Test", 100_000, portfolio=portfolio)
+strategy = MyStrategy("S001", "Test", 100_000, portfolio=portfolio)
 ```
 
 ---
@@ -272,14 +290,16 @@ strategy = Strategy("S001", "Test", 100_000, portfolio=portfolio)
 ```python
 from core import TradeAccount
 
-# With data provider (OPTIONAL - acts as pass-through for convenience)
-# Set once here, accessible in all strategies via self.data_provider
-# Framework NEVER calls it - YOU decide when to fetch prices
-data_provider = YourBrokerAPI()  # Your choice: Yahoo Finance, IB, Alpaca, etc.
-account = TradeAccount("ACC001", "My Account", data_provider=data_provider)
+# Create account (clean and simple)
+account = TradeAccount("ACC001", "My Account")
 
-# Without data provider (prices provided explicitly in place_trade)
-account = TradeAccount("ACC001", "My Account", data_provider=None)
+# For data sources, extend the class if needed:
+class MyAccount(TradeAccount):
+    def __init__(self, account_id, account_name, price_source=None):
+        super().__init__(account_id, account_name)
+        self.price_source = price_source  # Your choice: API, DataFrame, etc.
+
+account = MyAccount("ACC001", "Account", price_source=my_dataframe)
 ```
 
 #### Step 2: Create Funds
@@ -327,21 +347,17 @@ class MomentumStrategy(Strategy):
     Custom strategy - implement your trading logic
     """
     
-    def run(self):
-        """Your trading logic here"""
-        # YOU fetch prices (framework never does this automatically)
-        # Option 1: Use self.data_provider if you set it
-        # price = self.data_provider.get_price("AAPL") if self.data_provider else 150.00
-        
-        # Option 2: Provide explicitly
-        price = 150.00  # From your data source
+    def run(self, price_data):
+        """Your trading logic here - YOU provide the price data"""
+        # Get price from YOUR data source (DataFrame, dict, API, etc.)
+        price = price_data['AAPL']  # From your DataFrame/dict
         
         trade = self.place_trade(
             symbol="AAPL",
             direction=Trade.BUY,
             quantity=100,
             trade_type=Trade.MARKET,
-            price=price  # Always required
+            price=price
         )
         print(f"Executed: {trade}")
 
@@ -353,8 +369,9 @@ strategy = MomentumStrategy(
     portfolio=portfolio
 )
 
-# Run your strategy
-strategy.run()
+# Provide price data and run
+prices = {'AAPL': 150.00, 'GOOGL': 140.00}  # Your data source
+strategy.run(prices)
 ```
 
 ### 2. Trading Operations
@@ -894,140 +911,91 @@ class TradeRules(name="Default Rules")
 
 ```
 Trade_Engine/
-├── core/                          # Core trading system package
-│   ├── __init__.py               # Package exports
-│   ├── account.py                # TradeAccount class (5.6 KB)
-│   ├── fund.py                   # Fund class (7.0 KB)
-│   ├── portfolio.py              # Portfolio class (6.2 KB)
-│   ├── strategy.py               # Strategy base class (8.4 KB)
-│   ├── position.py               # Position class (4.4 KB)
-│   ├── trade.py                  # Trade class (2.3 KB)
-│   ├── rules.py                  # TradeRules class (4.7 KB)
-│   ├── ledger.py                 # Ledger class (9.4 KB)
-│   └── exceptions.py             # Custom exceptions (430 B)
+├── core/                          # Core trading framework
+│   ├── README.md                 # ⭐ Core documentation
+│   ├── account.py                # TradeAccount (base class)
+│   ├── fund.py                   # Fund (base class)
+│   ├── portfolio.py              # Portfolio (base class)
+│   ├── strategy.py               # Strategy (base class)
+│   ├── position.py               # Position tracking
+│   ├── trade.py                  # Trade representation
+│   ├── rules.py                  # Compliance rules
+│   ├── ledger.py                 # Automatic recording
+│   └── exceptions.py             # Custom exceptions
 │
-├── example_comprehensive.py      # Complete example (14 KB, 391 lines)
-├── README.md                     # This file
-└── rough.ipynb                   # Original development notebook
+├── tools/                         # Analysis & utilities
+│   ├── README.md                 # ⭐ Tools documentation
+│   └── performance.py            # Performance metrics
+│
+├── examples/                      # Examples & demos
+│   ├── README.md                 # ⭐ Examples catalog
+│   ├── example_account.py        # TradeAccount demo
+│   ├── example_fund.py           # Fund demo
+│   ├── example_portfolio.py      # Portfolio demo
+│   ├── example_strategy.py       # Strategy demo
+│   ├── example_complete.py       # Full workflow with pandas
+│   ├── example_comprehensive.py  # Original complete demo
+│   ├── example_pnl_tracking.py   # P&L tracking demo
+│   └── example_performance_metrics.py  # Performance demo
+│
+└── README.md                      # This file (main documentation)
 ```
+
+**→ See [core/README.md](core/README.md) for detailed core class documentation**  
+**→ See [tools/README.md](tools/README.md) for tools and performance metrics**  
+**→ See [examples/README.md](examples/README.md) for complete examples guide**
 
 ---
 
 ## Examples
 
-### Example 1: Standalone Strategy (No Hierarchy)
+**→ See [examples/README.md](examples/README.md) for complete examples catalog and learning path**
 
+### Quick Example - Standalone Strategy
 ```python
 from core import Strategy, Trade
 
-# Create standalone strategy - fastest way to get started!
-class BacktestStrategy(Strategy):
+class SimpleStrategy(Strategy):
     def run(self):
-        # No validation, no restrictions
         self.place_trade("AAPL", Trade.BUY, 100, Trade.MARKET, price=150)
-        self.place_trade("GOOGL", Trade.BUY, 50, Trade.MARKET, price=140)
-        self.place_trade("TSLA", Trade.SELL_SHORT, 200, Trade.MARKET, price=250)
 
-strategy = BacktestStrategy("BT001", "Backtest", 100_000, 
-                           portfolio=None, data_provider=None)
+strategy = SimpleStrategy("STRAT001", "Simple", 100_000)
 strategy.run()
-
-# View results
-strategy.summary(show_positions=True)
-strategy.ledger.summary()
+strategy.performance_metrics()
 ```
 
-### Example 2: Linked Mode (Full Hierarchy)
-
+### Quick Example - Full Hierarchy
 ```python
 from core import TradeAccount, Strategy, Trade
 
-# Setup full hierarchy - maximum safety
-account = TradeAccount("ACC001", "My Account")
+account = TradeAccount("ACC001", "Account")
 fund = account.create_fund("FUND001", "Fund", 1_000_000)
 portfolio = fund.create_portfolio("PORT001", "Portfolio", 500_000)
 
-# Strategy auto-links and gets validation
-class SafeStrategy(Strategy):
+class MyStrategy(Strategy):
     def run(self):
         self.place_trade("AAPL", Trade.BUY, 100, Trade.MARKET, price=150)
 
-strategy = SafeStrategy("STRAT001", "Safe", 100_000, portfolio=portfolio)
-strategy.run()  # Automatic validation + ledger cascade
-
-# View complete chain
+strategy = MyStrategy("STRAT001", "Strategy", 100_000, portfolio)
+strategy.run()
 account.summary(show_children=True)
 ```
 
-### Example 3: Long-Only Fund
-
-```python
-# Create long-only fund
-fund = account.create_fund("FUND002", "Long-Only Fund", 1_000_000)
-fund.trade_rules.allowed_directions = {Trade.BUY, Trade.SELL}
-fund.trade_rules.allow_short_selling = False
-
-# Attempts to short will be rejected
-try:
-    strategy.place_trade("TSLA", Trade.SELL_SHORT, 100, Trade.MARKET, price=250)
-except TradeComplianceError as e:
-    print(f"Rejected: {e}")  # "Fund rule violation: Trade direction 'SELL_SHORT' not allowed"
-```
-
-### Example 4: Ledger Analytics
-
-```python
-# Execute multiple trades
-for symbol in ["AAPL", "GOOGL", "MSFT"]:
-    strategy.place_trade(symbol, Trade.BUY, 100, Trade.MARKET, price=150)
-
-# Query ledger
-ledger = account.ledger
-print(f"Total trades: {ledger.get_trade_count()}")
-print(f"Total volume: ${ledger.get_total_volume():,.2f}")
-print(f"Symbols: {ledger.get_symbols_traded()}")
-
-# Export for analysis
-data = ledger.export_to_dict()
-```
-
-### Example 5: Multiple Strategies
-
-```python
-class TechStrategy(Strategy):
-    def run(self):
-        self.place_trade("AAPL", Trade.BUY, 100, Trade.MARKET, price=150)
-        self.place_trade("GOOGL", Trade.BUY, 50, Trade.MARKET, price=140)
-
-class FinanceStrategy(Strategy):
-    def run(self):
-        self.place_trade("JPM", Trade.BUY, 200, Trade.MARKET, price=145)
-        self.place_trade("BAC", Trade.BUY, 300, Trade.MARKET, price=32)
-
-tech = TechStrategy("TECH001", "Tech", 100_000, portfolio)
-finance = FinanceStrategy("FIN001", "Finance", 100_000, portfolio)
-
-tech.run()
-finance.run()
-
-# View portfolio ledger (contains trades from both strategies)
-portfolio.ledger.summary()
-```
-
-### Run Comprehensive Example
+### Run Complete Examples
 
 ```bash
-python3 example_comprehensive.py
+# Component-specific examples
+python3 examples/example_account.py      # TradeAccount usage & extension
+python3 examples/example_fund.py         # Fund usage & extension
+python3 examples/example_portfolio.py    # Portfolio usage & extension
+python3 examples/example_strategy.py     # Strategy implementation
+
+# Complete workflows
+python3 examples/example_complete.py     # Full workflow with pandas
+python3 examples/example_comprehensive.py # Original complete demo
 ```
 
-This demonstrates:
-- Complete hierarchy setup
-- Multiple funds and portfolios
-- Rule configuration
-- Trade execution
-- Ledger system
-- Query capabilities
-- Performance reporting
+**→ See [examples/README.md](examples/README.md) for all examples**
 
 ---
 

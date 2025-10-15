@@ -6,6 +6,19 @@
 # and data-source agnostic architecture.
 #
 # Hierarchy: TradeAccount → Fund → Portfolio → Strategy → Position → Trade
+#
+# Core modules:
+# - account: TradeAccount (top-level container)
+# - fund: Fund (raised capital unit)
+# - portfolio: Portfolio (capital allocation)
+# - strategy: Strategy (trading logic base class)
+# - position: Position (symbol aggregate)
+# - trade: Trade (individual order)
+# - rules: TradeRules (compliance enforcement)
+# - ledger: Ledger (automatic record keeping)
+# - exceptions: Custom exceptions
+#
+# Note: Analysis tools (PerformanceMetrics, etc.) are in the 'tools' package
 ###############################################################################
 """
 
@@ -18,6 +31,11 @@ from .strategy import Strategy
 from .portfolio import Portfolio
 from .fund import Fund
 from .account import TradeAccount
+
+# OMS/TMS are internal - not exported to users
+from . import order_management
+from . import trade_management
+from . import oms_tms_mixin
 
 __all__ = [
     'TradeComplianceError',

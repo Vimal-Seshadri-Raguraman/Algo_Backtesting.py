@@ -34,7 +34,7 @@ class Trade:
     REJECTED = "REJECTED"
     
     def __init__(self, symbol, direction, quantity, trade_type, strategy, 
-                 price=None, stop_price=None):
+                 price=None, stop_price=None, trade_date=None):
         """
         Initialize a Trade
         
@@ -46,6 +46,7 @@ class Trade:
             strategy: Parent Strategy object
             price: Limit price (for LIMIT orders)
             stop_price: Stop trigger price (for STOP orders)
+            trade_date: Optional datetime for backtesting (uses current time if None)
         """
         self.trade_id = None  # Assigned when executed
         self.symbol = symbol
@@ -61,9 +62,15 @@ class Trade:
         self.filled_quantity = 0
         self.avg_fill_price = 0.0
         self.commission = 0.0
-        self.created_at = datetime.now()
+        # Use provided trade_date for backtesting, or current time for live trading
+        self.created_at = trade_date if trade_date else datetime.now()
         self.submitted_at = None
         self.filled_at = None
+        
+        # P&L tracking
+        self.realized_pnl = 0.0  # Realized P&L if this trade closes a position
+        self.entry_price = None  # For position tracking (set by Position class)
+        self.is_opening = True   # True if opening position, False if closing
         
     def __repr__(self):
         return (f"Trade({self.symbol}, {self.direction}, {self.quantity}@"

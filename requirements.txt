@@ -1,0 +1,19 @@
+# Trade Engine - Optional Dependencies
+# 
+# Core framework has NO dependencies (pure Python)
+# Tools have optional dependencies based on features used
+
+# For backtesting, optimization, and advanced examples
+pandas>=2.0.0
+numpy>=1.24.0
+
+# For visualization (optional)
+matplotlib>=3.7.0
+
+# For optimization (optional - advanced methods)
+# scipy>=1.10.0  # Uncomment for Bayesian optimization
+
+# For reporting (optional)
+# reportlab>=4.0.0  # Uncomment for PDF reports
+# jinja2>=3.1.0     # Uncomment for HTML reports
+# openpyxl>=3.1.0   # Uncomment for Excel reports

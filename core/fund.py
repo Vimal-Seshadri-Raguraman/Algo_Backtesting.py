@@ -7,43 +7,69 @@
 from .rules import TradeRules
 from .portfolio import Portfolio
 from .ledger import Ledger
+from .oms_tms_mixin import OMSTMSMixin
 
 
-class Fund:
+class Fund(OMSTMSMixin):
     ###############################################################################
-    # Fund - Represents capital raised independently and registered to TradeAccount
+    # Fund - Represents capital raised independently (BASE CLASS - Extend or use directly)
     # ENFORCED RULES: Fund-level compliance rules are checked before trade execution
     ###############################################################################
     
-    def __init__(self, fund_id, fund_name, fund_balance, trade_account=None, data_provider=None):
+    def __init__(self, fund_id, fund_name, fund_balance, trade_account=None):
         """
-        Initialize Fund - works standalone or linked to account
+        Initialize Fund - Base class for fund management
+        
+        Can be used directly OR extended for custom behavior (both valid!).
         
         Args:
             fund_id: Unique identifier for the fund
             fund_name: Name of the fund
             fund_balance: Total capital for this fund
             trade_account: Optional parent TradeAccount (None = standalone mode)
-            data_provider: Optional data provider (used if trade_account=None)
         
-        Examples:
-            # Standalone mode
-            fund = Fund("F001", "Growth Fund", 1_000_000,
-                       trade_account=None, data_provider=my_provider)
+        Basic Usage (Direct - Quick Start):
+            fund = Fund("FUND001", "Growth Fund", 1_000_000)
+            portfolio = fund.create_portfolio("PORT001", "Portfolio", 500_000)
+        
+        Advanced Usage (Extend - Production/Custom):
+            class AutoRebalancingFund(Fund):
+                def __init__(self, fund_id, fund_name, fund_balance, rebalance_freq='quarterly'):
+                    super().__init__(fund_id, fund_name, fund_balance)
+                    self.rebalance_freq = rebalance_freq
+                    self.price_data = None  # Add your own data source
+                
+                def load_market_data(self, data_source):
+                    # Load from your data source (CSV, API, DataFrame)
+                    self.price_data = data_source
+                
+                def auto_rebalance(self):
+                    # Your custom rebalancing logic
+                    for portfolio in self.portfolios.values():
+                        # Rebalance portfolio
+                        pass
             
-            # Linked mode (with parent account)
-            fund = Fund("F001", "Growth Fund", 1_000_000, trade_account=my_account)
+            fund = AutoRebalancingFund("FUND001", "Auto Fund", 10_000_000)
+            fund.load_market_data(my_dataframe)
+            fund.auto_rebalance()
+        
+        Extension Points:
+            - Override create_portfolio() to return custom Portfolio subclasses
+            - Add your own data source attributes (API client, DataFrame, CSV reader)
+            - Add auto-rebalancing methods
+            - Add risk monitoring (VaR, exposure tracking)
+            - Add investor reporting (NAV calculations, statements)
+            - Add performance attribution
+            - Add fee calculation methods
         """
         self.fund_id = fund_id
         self.fund_name = fund_name
+        self.name = fund_name  # For OMSTMSMixin
         self.fund_balance = fund_balance
         self.trade_account = trade_account
         
-        # Get data provider from account OR use direct parameter
-        if trade_account is not None:
-            self.data_provider = trade_account.data_provider
-        else:
-            self.data_provider = data_provider
+        # Initialize or inherit OMS/TMS
+        self._initialize_or_inherit_systems(parent=trade_account)
         
         self.portfolios = {}  # Dictionary: "portfolio_id:portfolio_name" -> Portfolio
         
@@ -162,6 +188,67 @@ class Fund:
             tuple: (bool, str) - (is_allowed, reason_if_not)
         """
         return self.trade_rules.is_trade_allowed(trade, portfolio_value)
+    
+    def performance_metrics(self, current_prices=None, show_summary=True):
+        """
+        Calculate and display performance metrics for this fund
+        (aggregates all portfolio performance)
+        
+        Args:
+            current_prices: Dict of {symbol: price} for accurate balance calculation.
+            show_summary: If True, displays formatted summary. If False, returns metrics object.
+        
+        Returns:
+            PerformanceMetrics object if show_summary=False
+        
+        Example:
+            # Display summary
+            fund.performance_metrics()
+            
+            # Get metrics object for analysis
+            metrics = fund.performance_metrics(show_summary=False)
+            print(f"Sharpe Ratio: {metrics.sharpe_ratio()}")
+        """
+        from tools import PerformanceMetrics
+        
+        # Calculate current balance: unallocated cash + all portfolio values
+        current_balance = self.cash_balance  # Start with unallocated cash
+        
+        # Add all portfolio values
+        for portfolio in self.portfolios.values():
+            # Add portfolio unallocated cash
+            current_balance += portfolio.cash_balance
+            
+            # Add all strategy values in this portfolio
+            for strategy in portfolio.strategies.values():
+                # Get strategy cash (at entry prices)
+                strategy_cash = strategy.get_cash_balance(current_prices=None)
+                current_balance += strategy_cash
+                
+                # Add current value of strategy's open positions
+                for symbol, position in strategy.get_open_positions().items():
+                    if not position.is_closed:
+                        price = current_prices.get(symbol, position.avg_entry_price) if current_prices else position.avg_entry_price
+                        current_balance += position.get_market_value(price)
+                
+                # Add realized P&L from closed positions
+                realized_pnl = sum(pos.realized_pnl for pos in strategy.positions.values())
+                current_balance += realized_pnl
+        
+        # Create performance metrics object
+        metrics = PerformanceMetrics(
+            owner_name=self.fund_name,
+            owner_type="Fund",
+            ledger=self.ledger,
+            initial_balance=self.fund_balance,
+            current_balance=current_balance,
+            current_prices=current_prices
+        )
+        
+        if show_summary:
+            metrics.summary()
+        else:
+            return metrics
     
     def summary(self, show_children=False):
         """

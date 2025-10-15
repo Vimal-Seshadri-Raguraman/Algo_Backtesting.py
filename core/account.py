@@ -6,28 +6,58 @@
 
 from .fund import Fund
 from .ledger import Ledger
+from .oms_tms_mixin import OMSTMSMixin
 
 
-class TradeAccount:
+class TradeAccount(OMSTMSMixin):
     ###############################################################################
-    # TradeAccount - Top level trading account that holds all funds
+    # TradeAccount - Top level trading account (BASE CLASS - Extend or use directly)
     # DATA SOURCE AGNOSTIC: Pass any market data provider that implements get_quote()
     ###############################################################################
     
-    def __init__(self, account_id, account_name, data_provider=None):
+    def __init__(self, account_id, account_name):
         """
-        Initialize TradeAccount
+        Initialize TradeAccount - Base class for trading accounts
+        
+        Can be used directly OR extended for custom behavior (both valid!).
         
         Args:
             account_id: Unique identifier for the account
             account_name: Name of the trading account
-            data_provider: Market data provider (must implement get_quote() method)
-                          Examples: Yahoo Finance, Alpha Vantage, Interactive Brokers, Alpaca, etc.
+        
+        Basic Usage (Direct - Quick Start):
+            account = TradeAccount("ACC001", "My Account")
+            fund = account.create_fund("FUND001", "Fund", 1_000_000)
+        
+        Advanced Usage (Extend - Production/Custom):
+            class HedgeFundAccount(TradeAccount):
+                def __init__(self, account_id, account_name, fund_manager, data_api=None):
+                    super().__init__(account_id, account_name)
+                    self.fund_manager = fund_manager
+                    self.data_api = data_api  # Add your own data source
+                
+                def generate_sec_filing(self):
+                    # Your custom reporting logic
+                    pass
+            
+            account = HedgeFundAccount("ACC001", "Fund", "John Doe", data_api=my_api)
+            account.generate_sec_filing()
+        
+        Extension Points:
+            - Override create_fund() to return custom Fund subclasses
+            - Add data source attributes (your choice: API, DataFrame, CSV reader)
+            - Add reporting methods (SEC filings, monthly statements)
+            - Add compliance checks (account-level limits)
+            - Add data export methods (database, APIs)
+            - Add notification systems (alerts, webhooks)
         """
         self.account_id = account_id
         self.account_name = account_name
-        self.data_provider = data_provider
+        self.name = account_name  # For OMSTMSMixin
         self.funds = {}  # Dictionary: "fund_id:fund_name" -> Fund
+        
+        # Initialize OMS/TMS at account level (highest level, no parent)
+        self._initialize_or_inherit_systems(parent=None)
         
         # Initialize ledger for account-level trade tracking
         self.ledger = Ledger(account_name, "TradeAccount")
@@ -138,6 +168,73 @@ class TradeAccount:
         For TradeAccount, this is always 0 since all capital comes from funds.
         """
         return 0
+    
+    def performance_metrics(self, current_prices=None, show_summary=True):
+        """
+        Calculate and display performance metrics for this account
+        (aggregates all fund performance)
+        
+        Args:
+            current_prices: Dict of {symbol: price} for accurate balance calculation.
+            show_summary: If True, displays formatted summary. If False, returns metrics object.
+        
+        Returns:
+            PerformanceMetrics object if show_summary=False
+        
+        Example:
+            # Display summary
+            account.performance_metrics()
+            
+            # Get metrics object for analysis
+            metrics = account.performance_metrics(show_summary=False)
+            print(f"Sharpe Ratio: {metrics.sharpe_ratio()}")
+        """
+        from tools import PerformanceMetrics
+        
+        # Calculate current balance across all funds
+        initial_balance = self.account_balance
+        current_balance = 0
+        
+        # Add all fund values
+        for fund in self.funds.values():
+            # Add fund unallocated cash
+            current_balance += fund.cash_balance
+            
+            # Add all portfolio values in this fund
+            for portfolio in fund.portfolios.values():
+                # Add portfolio unallocated cash
+                current_balance += portfolio.cash_balance
+                
+                # Add all strategy values in this portfolio
+                for strategy in portfolio.strategies.values():
+                    # Get strategy cash (at entry prices)
+                    strategy_cash = strategy.get_cash_balance(current_prices=None)
+                    current_balance += strategy_cash
+                    
+                    # Add current value of strategy's open positions
+                    for symbol, position in strategy.get_open_positions().items():
+                        if not position.is_closed:
+                            price = current_prices.get(symbol, position.avg_entry_price) if current_prices else position.avg_entry_price
+                            current_balance += position.get_market_value(price)
+                    
+                    # Add realized P&L from closed positions
+                    realized_pnl = sum(pos.realized_pnl for pos in strategy.positions.values())
+                    current_balance += realized_pnl
+        
+        # Create performance metrics object
+        metrics = PerformanceMetrics(
+            owner_name=self.account_name,
+            owner_type="TradeAccount",
+            ledger=self.ledger,
+            initial_balance=initial_balance,
+            current_balance=current_balance,
+            current_prices=current_prices
+        )
+        
+        if show_summary:
+            metrics.summary()
+        else:
+            return metrics
     
     def summary(self, show_children=False):
         """

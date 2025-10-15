@@ -105,15 +105,29 @@ class Position:
         """
         if trade.direction in {Trade.BUY, Trade.BUY_TO_COVER}:
             # Adding to position or covering short
-            old_value = self.quantity * self.avg_entry_price
-            new_value = trade.filled_quantity * trade.avg_fill_price
-            
-            self.quantity += trade.filled_quantity
-            
-            if self.quantity != 0:
-                self.avg_entry_price = (old_value + new_value) / self.quantity
-            
-            self.opening_trades.append(trade)
+            if trade.direction == Trade.BUY_TO_COVER and self.quantity < 0:
+                # Covering short position - calculate realized P&L
+                realized = (self.avg_entry_price - trade.avg_fill_price) * trade.filled_quantity
+                self.realized_pnl += realized
+                trade.realized_pnl = realized
+                trade.entry_price = self.avg_entry_price
+                trade.is_opening = False
+                self.closing_trades.append(trade)
+                # ✅ FIX: Update quantity when covering short
+                self.quantity += trade.filled_quantity
+            else:
+                # Opening or adding to long position
+                old_value = self.quantity * self.avg_entry_price
+                new_value = trade.filled_quantity * trade.avg_fill_price
+                
+                self.quantity += trade.filled_quantity
+                
+                if self.quantity != 0:
+                    self.avg_entry_price = (old_value + new_value) / self.quantity
+                
+                trade.entry_price = self.avg_entry_price
+                trade.is_opening = True
+                self.opening_trades.append(trade)
             
         elif trade.direction in {Trade.SELL, Trade.SELL_SHORT}:
             # Reducing position or opening short
@@ -121,9 +135,27 @@ class Position:
                 # Closing long position - calculate realized P&L
                 realized = (trade.avg_fill_price - self.avg_entry_price) * trade.filled_quantity
                 self.realized_pnl += realized
+                trade.realized_pnl = realized
+                trade.entry_price = self.avg_entry_price
+                trade.is_opening = False
                 self.closing_trades.append(trade)
-            
-            self.quantity -= trade.filled_quantity
+                # ✅ FIX: Update quantity when selling
+                self.quantity -= trade.filled_quantity
+            elif trade.direction == Trade.SELL_SHORT:
+                # Opening short position
+                old_value = self.quantity * self.avg_entry_price
+                new_value = -trade.filled_quantity * trade.avg_fill_price
+                
+                self.quantity -= trade.filled_quantity
+                
+                if self.quantity != 0:
+                    self.avg_entry_price = (old_value + new_value) / self.quantity
+                
+                trade.entry_price = self.avg_entry_price
+                trade.is_opening = True
+                self.opening_trades.append(trade)
+            else:
+                self.quantity -= trade.filled_quantity
             
             if self.is_closed:
                 self.closed_at = datetime.now()

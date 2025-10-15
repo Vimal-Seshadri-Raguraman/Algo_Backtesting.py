@@ -26,6 +26,7 @@ class Ledger:
         self.owner_name = owner_name
         self.owner_type = owner_type
         self.trades: List = []  # All trades in chronological order
+        self.rejections: List = []  # All rejected orders
         self.created_at = datetime.now()
         
         # Index for fast lookups
@@ -46,6 +47,35 @@ class Ledger:
         self._trades_by_symbol[trade.symbol].append(trade)
         self._trades_by_status[trade.status].append(trade)
         self._trades_by_direction[trade.direction].append(trade)
+    
+    def record_rejection(self, order, reason: str) -> None:
+        """
+        Record a rejected order
+        
+        Args:
+            order: Order object that was rejected
+            reason: Reason for rejection
+        """
+        rejection = {
+            'timestamp': datetime.now(),
+            'symbol': order.symbol,
+            'action': order.action,
+            'quantity': order.quantity,
+            'order_type': order.order_type,
+            'price': order.price,
+            'reason': reason,
+            'strategy': order.strategy.strategy_name if hasattr(order, 'strategy') else 'Unknown'
+        }
+        self.rejections.append(rejection)
+    
+    def get_rejections(self) -> List:
+        """
+        Get all rejected orders
+        
+        Returns:
+            List of rejection records
+        """
+        return self.rejections.copy()
     
     def get_all_trades(self) -> List:
         """Get all trades in chronological order"""
